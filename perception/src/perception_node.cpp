@@ -13,12 +13,12 @@ class PerceptionNode : public rclcpp::Node
 public:
     PerceptionNode() : Node("perception_node")
     {
-        image_subscriber_ = this->create_subscription<sensor_msgs::msg::Image>(
+        image_subscriber= this->create_subscription<sensor_msgs::msg::Image>(
             "image_raw",
             10,
             std::bind(&PerceptionNode::image_callback, this, std::placeholders::_1));
 
-        point_publisher_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+        point_publisher = this->create_publisher<geometry_msgs::msg::PointStamped>(
             "object_point",
             10);
 
@@ -31,8 +31,8 @@ private:
         
     }
 
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscriber_;
-    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr point_publisher_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscriber;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr point_publisher;
 };
 
 int main(int argc, char * argv[])
