@@ -1,6 +1,11 @@
 #include "rclcpp/rclcpp.hpp"
-#include "PACKAGE_NAME/msg/MESSAGE_TYPE.hpp"
-#include <chrono>
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+
+#include "cv_bridge/cv_bridge.hpp"
+#include <opencv2/opencv.hpp>
+
 #include <functional>
 
 class PerceptionNode : public rclcpp::Node
@@ -8,53 +13,32 @@ class PerceptionNode : public rclcpp::Node
 public:
     PerceptionNode() : Node("perception_node")
     {
-       
-
-        // Subscriber
-        subscriber_ = this->create_subscription<PACKAGE_NAME::msg::MESSAGE_TYPE>(
-            "input_topic",
+        image_subscriber_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "image_raw",
             10,
-            std::bind(&PerceptionNode::callback, this, std::placeholders::_1));
+            std::bind(&PerceptionNode::image_callback, this, std::placeholders::_1));
 
-        // Publisher
-        publisher_ = this->create_publisher<PACKAGE_NAME::msg::MESSAGE_TYPE>(
-            "output_topic",
+        point_publisher_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+            "object_point",
             10);
 
-        // Timer
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(100),
-            std::bind(&PerceptionNode::command_loop, this));
-
-        RCLCPP_INFO(this->get_logger(), "Node Started");
+        RCLCPP_INFO(this->get_logger(), "Perception Node Started");
     }
 
 private:
-    void callback(const PACKAGE_NAME::msg::MESSAGE_TYPE::SharedPtr msg)
+    void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
-        /es
-    }
-
-    void command_loop()
-    {
-        PACKAGE_NAME::msg::MESSAGE_TYPE command;
-
         
-
-        publisher_->publish(command);
     }
 
-    rclcpp::Subscription<PACKAGE_NAME::msg::MESSAGE_TYPE>::SharedPtr subscriber_;
-    rclcpp::Publisher<PACKAGE_NAME::msg::MESSAGE_TYPE>::SharedPtr publisher_;
-    rclcpp::TimerBase::SharedPtr timer_;
-
-    
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscriber_;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr point_publisher_;
 };
 
 int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<NodeName>());
+    rclcpp::spin(std::make_shared<PerceptionNode>());
     rclcpp::shutdown();
     return 0;
 }
