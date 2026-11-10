@@ -1,36 +1,38 @@
 cmake_minimum_required(VERSION 3.8)
-project(perception)
+project(image_converter_pkg)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
+find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(tf2_ros REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 
-add_executable(perception_node src/perception_node.cpp)
+add_executable(image_converter src/image_converter.cpp)
 
-ament_target_dependencies(
-  perception_node
+target_include_directories(image_converter PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+ament_target_dependencies(image_converter
   rclcpp
-  sensor_msgs
-  geometry_msgs
+  image_transport
   cv_bridge
-  tf2_ros
+  sensor_msgs
 )
 
-target_link_libraries(
-  perception_node
-  ${OpenCV_LIBS}
-)
+# Link OpenCV libraries
+target_link_libraries(image_converter ${OpenCV_LIBRARIES})
 
 install(TARGETS
-  perception_node
+  image_converter
   DESTINATION lib/${PROJECT_NAME}
 )
 
