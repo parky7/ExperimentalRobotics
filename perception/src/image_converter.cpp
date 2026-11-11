@@ -6,6 +6,12 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <iostream>
 
+using namespace cv;
+using namespace std;
+
+int thresh = 100; 
+RNG rng(12345);
+
 class ImageConverter : public rclcpp::Node
 {
 private:
@@ -53,24 +59,44 @@ public:
     }
 
 
-    cv::Mat imageHSV;
-    cv::Mat output;
+    cv::Mat imageHSV, output, denoised, gray, drawing;
     cv::cvtColor(cv_ptr->image, imageHSV, CV_BGR2HSV);
     cv::cvtColor(cv_ptr->image, output, CV_BGR2HSV);
-    cv::Scalar lowerColor = (40, 40, 0);
-    cv::Scalar upperColor = (150, 150, 30);
+    cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
+    
+    cv::blur(gray, gray, cv::Size(3,3));
+    imshow("gray", gray);
+
 
     cv::imshow(window_name_, imageHSV);
-
-    cv::inRange(imageHSV, lowerColor, upperColor, output);
-
+    cv::inRange(imageHSV, cv::Scalar(10, 50, 40), cv::Scalar(20, 255, 100), output);
+    cv::Mat kernal = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7,7));
+    cv::morphologyEx(output, denoised, cv::MORPH_CLOSE, kernal);
     // Update GUI Window
     cv::imshow("HSV", output);
+    cv::imshow("denoised", denoised);
     cv::waitKey(3);
 
     // Output modified video stream
     image_pub_.publish(cv_ptr->toImageMsg());
+    thresh_callback(0,0,gray);
   }
+void thresh_callback(int, void*,Mat gray )
+{
+    Mat canny_output;
+    Canny( gray, canny_output, thresh, thresh*2 );
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+    findContours( canny_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
+    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+    for( size_t i = 0; i< contours.size(); i++ )
+    {
+        Scalar color = Scalar( rng.uniform(0, 256), rng.uniform(0,256), rng.uniform(0,256) );
+        drawContours( drawing, contours, (int)i, color, 2, LINE_8, hierarchy, 0 );
+    }
+    imshow( "Contours", drawing );
+}
+
 };
 
 int main(int argc, char** argv)
