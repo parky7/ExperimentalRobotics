@@ -5,12 +5,12 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 
-using namespace cv;
-using namespace std;
 
-int thresh = 100; 
-RNG rng(12345);
+// int thresh = 100; 
+// RNG rng(12345);
 
 class ImageConverter : public rclcpp::Node
 {
@@ -64,38 +64,60 @@ public:
     cv::cvtColor(cv_ptr->image, output, CV_BGR2HSV);
     cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
     
-    cv::blur(gray, gray, cv::Size(3,3));
-    imshow("gray", gray);
 
 
-    cv::imshow(window_name_, imageHSV);
-    cv::inRange(imageHSV, cv::Scalar(10, 50, 40), cv::Scalar(20, 255, 100), output);
-    cv::Mat kernal = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7,7));
+    cv::imshow(window_name_, imageHSV); // This shows the image before filtering
+    cv::inRange(imageHSV, cv::Scalar(0, 35, 15), cv::Scalar(25, 255, 95), output);
+    cv::Mat kernal = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)); // denoise
     cv::morphologyEx(output, denoised, cv::MORPH_CLOSE, kernal);
+
+    // variables for contour
+    std::vector<std::vector<cv::Point>> contours;
+    std::vector<cv::Vec4i> hierarchy;
+    std::vector<cv::Point2i> center;
+    std::vector<int> radius;
+    
+    cv::findContours(denoised.clone(), contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
+
+    size_t count = contours.size();
+
+    size_t max = 0;
+    for(size_t i = 0; i < count; i++){
+      cv::Point2f c;
+      float r;
+      cv::minEnclosingCircle(contours[i], c, r);
+
+      if(r >= 30){
+        center.push_back(c);
+        radius.push_back(r);
+        if(radius.at(radius.size() - 1) > radius.at(max)){
+          max = radius.size() - 1;
+        }
+      }
+    }
+    
+    count = center.size();
+    // Find the bigest radus circle and only draw one
+    if(count > 0){
+      cv::circle(cv_ptr->image, center[max], radius[max], cv::Scalar(255,10,10), 3);
+      std::string text = "Center point:(" + std::to_string(center[max].x) + ", " + std::to_string(center[max].y) + ")";
+      cv::putText(cv_ptr->image, text, cv::Point(5,15), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0,255,0), 2);
+    }
+    
+    // Draw all circles
+    // for(size_t i = 0; i < count; i++){
+    //   cv::circle(cv_ptr->image, center[i], radius[i], cv::Scalar(255,10,10), 3);
+    // }
+
+
     // Update GUI Window
-    cv::imshow("HSV", output);
+    cv::imshow("rbg", cv_ptr->image);
     cv::imshow("denoised", denoised);
     cv::waitKey(3);
 
     // Output modified video stream
     image_pub_.publish(cv_ptr->toImageMsg());
-    thresh_callback(0,0,gray);
   }
-void thresh_callback(int, void*,Mat gray )
-{
-    Mat canny_output;
-    Canny( gray, canny_output, thresh, thresh*2 );
-    vector<vector<Point> > contours;
-    vector<Vec4i> hierarchy;
-    findContours( canny_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
-    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
-    for( size_t i = 0; i< contours.size(); i++ )
-    {
-        Scalar color = Scalar( rng.uniform(0, 256), rng.uniform(0,256), rng.uniform(0,256) );
-        drawContours( drawing, contours, (int)i, color, 2, LINE_8, hierarchy, 0 );
-    }
-    imshow( "Contours", drawing );
-}
 
 };
 
