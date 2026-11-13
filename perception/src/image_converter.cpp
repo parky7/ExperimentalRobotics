@@ -12,6 +12,8 @@
 
 #include <std_msgs/msg/header.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include <tf2_ros/buffer.hpp>
 #include <tf2_ros/transform_listener.hpp>
@@ -39,11 +41,16 @@ private:
   rclcpp::Publisher<
     geometry_msgs::msg::PointStamped
   >::SharedPtr object_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr box_pub_;
+  double box_thickness_;
 
   void publishObjectInBase(
     double X,
     double Y,
     double Z,
+    double angle,
+    double width,
+    double height,
     const std_msgs::msg::Header &image_header)
   {
     geometry_msgs::msg::PointStamped camera_point;
@@ -64,6 +71,36 @@ private:
       );
 
       object_pub_->publish(robot_point);
+
+      geometry_msgs::msg::PoseStamped camera_pose;
+      camera_pose.header = image_header;
+      camera_pose.pose.position.x = X;
+      camera_pose.pose.position.y = Y;
+      camera_pose.pose.position.z = Z + box_thickness_ / 2.0;
+      tf2::Quaternion rotation;
+      rotation.setRPY(0.0, 0.0, angle);
+      camera_pose.pose.orientation = tf2::toMsg(rotation);
+
+      geometry_msgs::msg::PoseStamped robot_pose;
+      tf_buffer_->transform(camera_pose, robot_pose, "base_link");
+
+      visualization_msgs::msg::Marker box;
+      box.header = robot_pose.header;
+      box.ns = "detected_box";
+      box.id = 0;
+      box.type = visualization_msgs::msg::Marker::CUBE;
+      box.action = visualization_msgs::msg::Marker::ADD;
+      box.pose = robot_pose.pose;
+      box.scale.x = width;
+      box.scale.y = height;
+      box.scale.z = box_thickness_;
+      box.color.r = 0.55f;
+      box.color.g = 0.27f;
+      box.color.b = 0.07f;
+      box.color.a = 1.0f;
+      box.lifetime.sec = 0;
+      box.lifetime.nanosec = 500000000;
+      box_pub_->publish(box);
 
       RCLCPP_INFO(
         this->get_logger(),
@@ -88,6 +125,7 @@ public:
   {
     window_name_ = "Image window";
     cv::namedWindow(window_name_);
+    box_thickness_ = this->declare_parameter<double>("box_thickness", 0.08);
 
     image_sub_ = image_transport::create_subscription(
       this,
@@ -117,6 +155,8 @@ public:
       object_pub_ = this->create_publisher<
         geometry_msgs::msg::PointStamped
       >("/object_position", 10);
+      box_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
+        "/object_box", 10);
   }
 
   ~ImageConverter()
@@ -166,42 +206,44 @@ public:
 
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
-    std::vector<cv::Point2i> center;
-    std::vector<int> radius;
     
     cv::findContours(denoised.clone(), contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_NONE);
 
-    size_t count = contours.size();
-    size_t max = 0;
+    int box_contour = -1;
+    float max_radius = 30.0f;
     
-    for(size_t i = 0; i < count; i++){
+    for(size_t i = 0; i < contours.size(); i++){
       cv::Point2f c;
       float r;
       cv::minEnclosingCircle(contours[i], c, r);
 
-      if(r >= 30){
-        center.push_back(c);
-        radius.push_back(r);
-        if(radius.at(radius.size() - 1) > radius.at(max)){
-          max = radius.size() - 1;
-        }
+      if(r > max_radius){
+        max_radius = r;
+        box_contour = static_cast<int>(i);
       }
     }
     
-    count = center.size();
-    if(count > 0){
-      cv::circle(cv_ptr->image, center[max], radius[max], cv::Scalar(255,10,10), 3);
-      cv::circle(cv_ptr->image, center[max], 5, cv::Scalar(0,0,255), cv::FILLED);
+    if(box_contour >= 0){
+      cv::RotatedRect box_rect = cv::minAreaRect(contours[box_contour]);
+      cv::Point center(
+        static_cast<int>(std::round(box_rect.center.x)),
+        static_cast<int>(std::round(box_rect.center.y)));
+      cv::Point2f corners[4];
+      box_rect.points(corners);
+      for(int i = 0; i < 4; i++){
+        cv::line(cv_ptr->image, corners[i], corners[(i + 1) % 4], cv::Scalar(255,10,10), 2);
+      }
+      cv::circle(cv_ptr->image, center, 5, cv::Scalar(0,0,255), cv::FILLED);
       
-      std::string text = "Center point:(" + std::to_string(center[max].x) + ", " + std::to_string(center[max].y) + ")";
+      std::string text = "Center point:(" + std::to_string(center.x) + ", " + std::to_string(center.y) + ")";
       cv::putText(cv_ptr->image, text, cv::Point(5,15), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0,255,0), 2);
       
       if(!depth.empty() && fx > 0 && fy > 0){
         double depthSum = 0;
         int counter = 0;
         
-        int u = center[max].x; // column coordinate
-        int v = center[max].y; // row coordinate
+        int u = center.x; // column coordinate
+        int v = center.y; // row coordinate
 
         // Sample a 9x9 neighborhood around the center point
         for(int i = -4; i <= 4; i++){
@@ -231,7 +273,10 @@ public:
           std::string depth_text = "X: " + std::to_string(X) + " Y: " + std::to_string(Y);
           cv::putText(cv_ptr->image, depth_text, cv::Point(5, 35), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 2);
 
-          publishObjectInBase(X,Y,meanDepth,msg->header);
+          double angle = box_rect.angle * CV_PI / 180.0;
+          double width = box_rect.size.width * meanDepth / fx;
+          double height = box_rect.size.height * meanDepth / fy;
+          publishObjectInBase(X, Y, meanDepth, angle, width, height, msg->header);
         }
       }
     }
