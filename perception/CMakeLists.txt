@@ -12,6 +12,11 @@ find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 add_executable(image_converter src/image_converter.cpp)
 
@@ -26,6 +31,11 @@ ament_target_dependencies(image_converter
   image_transport
   cv_bridge
   sensor_msgs
+  std_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 # Link OpenCV libraries
